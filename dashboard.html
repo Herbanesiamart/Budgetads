@@ -287,7 +287,7 @@
 
     const catatan = document.getElementById('approveNote').value.trim();
 
-    const { error } = await supabase.from('topup_requests').update({
+    const { error } = await _db.from('topup_requests').update({
       status: 'approved',
       nominal_actual: nominal,
       catatan: catatan || null,
@@ -297,7 +297,7 @@
     if (error) { showToast('Gagal: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'ACC & Catat'; return; }
 
     // Notif in-app ke advertiser
-    await supabase.from('notifications').insert({
+    await _db.from('notifications').insert({
       user_id: selectedRequest.advertiser_id,
       type: 'topup_approved',
       title: '✅ Top Up Disetujui',
@@ -331,7 +331,7 @@
     const catatan = document.getElementById('approveNote').value.trim();
     if (!catatan) return showToast('Isi alasan penolakan', 'error');
 
-    const { error } = await supabase.from('topup_requests').update({
+    const { error } = await _db.from('topup_requests').update({
       status: 'rejected',
       catatan,
       updated_at: new Date().toISOString()
@@ -339,7 +339,7 @@
 
     if (error) return showToast('Gagal: ' + error.message, 'error');
 
-    await supabase.from('notifications').insert({
+    await _db.from('notifications').insert({
       user_id: selectedRequest.advertiser_id,
       type: 'topup_rejected',
       title: '❌ Top Up Ditolak',

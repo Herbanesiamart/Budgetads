@@ -201,11 +201,11 @@
     const update = { status, catatan: catatan || null, updated_at: new Date().toISOString() };
     if (status === 'approved') update.nominal_actual = nominal;
 
-    const { error } = await supabase.from('topup_requests').update(update).eq('id', selectedRequest.id);
+    const { error } = await _db.from('topup_requests').update(update).eq('id', selectedRequest.id);
     if (error) return showToast('Gagal: ' + error.message, 'error');
 
     // In-app notification
-    await supabase.from('notifications').insert({
+    await _db.from('notifications').insert({
       user_id: selectedRequest.advertiser_id,
       type: status === 'approved' ? 'topup_approved' : 'topup_rejected',
       title: status === 'approved' ? '✅ Top Up Disetujui' : '❌ Top Up Ditolak',

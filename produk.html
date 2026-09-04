@@ -96,7 +96,7 @@
   }
 
   async function loadProduk() {
-    const { data } = await supabase.from('produk').select('*').order('nama');
+    const { data } = await _db.from('produk').select('*').order('nama');
     const tbody = document.getElementById('produkBody');
 
     if (!data || data.length === 0) {
@@ -156,9 +156,9 @@
     const payload = { nama, target_biaya_per_hasil: target };
     let error;
     if (id) {
-      ({ error } = await supabase.from('produk').update(payload).eq('id', id));
+      ({ error } = await _db.from('produk').update(payload).eq('id', id));
     } else {
-      ({ error } = await supabase.from('produk').insert(payload));
+      ({ error } = await _db.from('produk').insert(payload));
     }
 
     if (error) return showToast('Gagal: ' + error.message, 'error');
@@ -169,7 +169,7 @@
 
   async function deleteProduk(id, nama) {
     if (!confirm(`Hapus produk "${nama}"? Semua akun ads yang pakai produk ini akan terpengaruh.`)) return;
-    const { error } = await supabase.from('produk').delete().eq('id', id);
+    const { error } = await _db.from('produk').delete().eq('id', id);
     if (error) return showToast('Gagal hapus: ' + error.message, 'error');
     showToast('Produk dihapus', 'success');
     loadProduk();

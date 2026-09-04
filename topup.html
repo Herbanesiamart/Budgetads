@@ -250,13 +250,13 @@
       // Upload file ke Supabase Storage
       const ext = uploadedFile.name.split('.').pop();
       const path = `topup/${profile.id}/${Date.now()}.${ext}`;
-      const { data: storageData, error: storageErr } = await supabase.storage
+      const { data: storageData, error: storageErr } = await _db.storage
         .from('topup-screenshots')
         .upload(path, uploadedFile);
 
       if (storageErr) throw new Error('Gagal upload: ' + storageErr.message);
 
-      const { data: { publicUrl } } = supabase.storage.from('topup-screenshots').getPublicUrl(path);
+      const { data: { publicUrl } } = _db.storage.from('topup-screenshots').getPublicUrl(path);
       ssUrl = publicUrl;
 
       // Kirim ke API untuk extract
@@ -347,7 +347,7 @@
       tanggal: new Date().toISOString().split('T')[0]
     };
 
-    const { data, error } = await supabase.from('topup_requests').insert(payload).select().single();
+    const { data, error } = await _db.from('topup_requests').insert(payload).select().single();
     if (error) {
       showToast('Gagal kirim: ' + error.message, 'error');
       btn.disabled = false; btn.textContent = 'Kirim Request';

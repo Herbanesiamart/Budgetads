@@ -104,7 +104,7 @@
 
   async function loadAkunFilter() {
     const isAdmin = profile.role === 'admin';
-    let query = supabase.from('akun_ads').select('id, nama_akun, advertiser_id, profiles(nama)').eq('aktif', true);
+    let query = _db.from('akun_ads').select('id, nama_akun, advertiser_id, profiles(nama)').eq('aktif', true);
     if (!isAdmin) query = query.eq('advertiser_id', profile.id);
 
     const { data } = await query.order('nama_akun');

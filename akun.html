@@ -115,7 +115,7 @@
   }
 
   async function loadProduk() {
-    const { data } = await supabase.from('produk').select('*').order('nama');
+    const { data } = await _db.from('produk').select('*').order('nama');
     produkList = data || [];
     const sel = document.getElementById('produkSelect');
     sel.innerHTML = '<option value="">Pilih produk...</option>' +
@@ -252,9 +252,9 @@
 
     let error;
     if (id) {
-      ({ error } = await supabase.from('akun_ads').update(payload).eq('id', id));
+      ({ error } = await _db.from('akun_ads').update(payload).eq('id', id));
     } else {
-      ({ error } = await supabase.from('akun_ads').insert({ ...payload, advertiser_id: profile.id }));
+      ({ error } = await _db.from('akun_ads').insert({ ...payload, advertiser_id: profile.id }));
     }
 
     btn.disabled = false; btn.textContent = 'Simpan';
@@ -267,7 +267,7 @@
   }
 
   async function toggleAktif(id, current) {
-    const { error } = await supabase.from('akun_ads').update({ aktif: !current }).eq('id', id);
+    const { error } = await _db.from('akun_ads').update({ aktif: !current }).eq('id', id);
     if (error) return showToast('Gagal mengubah status', 'error');
     showToast('Status akun diperbarui', 'success');
     loadAkun();

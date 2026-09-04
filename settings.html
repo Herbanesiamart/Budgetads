@@ -97,7 +97,7 @@
     const no_wa = document.getElementById('profWa').value.trim();
     if (!nama) return showToast('Nama tidak boleh kosong', 'error');
 
-    const { error } = await supabase.from('profiles').update({ nama, no_wa }).eq('id', profile.id);
+    const { error } = await _db.from('profiles').update({ nama, no_wa }).eq('id', profile.id);
     if (error) return showToast('Gagal: ' + error.message, 'error');
 
     sessionStorage.removeItem('bma_profile');
@@ -110,7 +110,7 @@
     if (pass.length < 6) return showToast('Password minimal 6 karakter', 'error');
     if (pass !== conf) return showToast('Konfirmasi password tidak cocok', 'error');
 
-    const { error } = await supabase.auth.updateUser({ password: pass });
+    const { error } = await _db.auth.updateUser({ password: pass });
     if (error) return showToast('Gagal: ' + error.message, 'error');
 
     document.getElementById('newPass').value = '';
@@ -119,7 +119,7 @@
   }
 
   async function loadWaTargets() {
-    const { data } = await supabase.from('app_settings').select('value').eq('key', 'wa_targets').single();
+    const { data } = await _db.from('app_settings').select('value').eq('key', 'wa_targets').single();
     waTargets = data?.value || [];
     renderWaTargets();
   }
@@ -151,7 +151,7 @@
 
   async function saveWaTargets() {
     const clean = waTargets.filter(t => t.nama && t.no);
-    const { error } = await supabase.from('app_settings').upsert({ key: 'wa_targets', value: clean });
+    const { error } = await _db.from('app_settings').upsert({ key: 'wa_targets', value: clean });
     if (error) return showToast('Gagal: ' + error.message, 'error');
     showToast('Nomor WA disimpan', 'success');
   }
