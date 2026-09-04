@@ -86,6 +86,12 @@
     </div>
 
     <div class="form-group">
+      <label>Payment Threshold Meta (Rp)</label>
+      <input type="number" id="paymentThreshold" placeholder="539066">
+      <div class="form-hint">Angka "Jangkauan saldo" di halaman billing Meta — batas Meta auto-charge kartu</div>
+    </div>
+
+    <div class="form-group">
       <label>Daily Limit Top Up (Rp)</label>
       <input type="number" id="dailyLimit" placeholder="500000">
       <div class="form-hint">Maksimal total top up yang boleh diajukan per hari</div>
@@ -163,7 +169,10 @@
       const spends = spendMap[a.id] || [];
       const avgSpend = spends.length > 0 ? spends.reduce((s, v) => s + v, 0) / spends.length : null;
       const budgetIklan = a.budget_iklan || 0;
+      const threshold = a.payment_threshold || 0;
       const efisiensi = avgSpend && budgetIklan ? Math.round(avgSpend / budgetIklan * 100) : null;
+      // Estimasi berapa kali Meta charge kartu per hari
+      const estimasiCharge = threshold > 0 && budgetIklan > 0 ? Math.ceil(budgetIklan / threshold) : null;
 
       let spendInfo = '';
       if (avgSpend !== null) {
@@ -182,10 +191,15 @@
             <div style="color:#65676B;font-size:13px;margin-bottom:8px;">
               🏷️ ${a.produk?.nama || '—'} &nbsp;|&nbsp; 💳 ${a.nama_kartu} ****${a.no_kartu}
             </div>
-            <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;">
               <span>Budget Iklan: <strong>${formatRp(budgetIklan)}</strong></span>
+              <span>Payment Threshold: <strong>${threshold ? formatRp(threshold) : '—'}</strong></span>
               <span>Daily Limit Top Up: <strong>${formatRp(a.daily_limit)}</strong></span>
             </div>
+            ${estimasiCharge ? `
+            <div style="font-size:12px;padding:6px 10px;background:#fff3cd;border-radius:6px;margin-bottom:4px;">
+              ⚡ Meta akan charge kartu ~<strong>${estimasiCharge}x per hari</strong> — pastikan available limit kartu ≥ <strong>${formatRp(budgetIklan)}</strong>
+            </div>` : ''}
             ${spendInfo}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
@@ -207,6 +221,7 @@
     document.getElementById('namaKartu').value = '';
     document.getElementById('nomorKartu').value = '';
     document.getElementById('budgetIklan').value = '';
+    document.getElementById('paymentThreshold').value = '';
     document.getElementById('dailyLimit').value = '';
     document.getElementById('akunModal').classList.add('show');
   }
@@ -219,6 +234,7 @@
     document.getElementById('namaKartu').value = a.nama_kartu;
     document.getElementById('nomorKartu').value = a.no_kartu;
     document.getElementById('budgetIklan').value = a.budget_iklan || '';
+    document.getElementById('paymentThreshold').value = a.payment_threshold || '';
     document.getElementById('dailyLimit').value = a.daily_limit;
     document.getElementById('akunModal').classList.add('show');
   }
@@ -234,6 +250,7 @@
     const nama_kartu = document.getElementById('namaKartu').value.trim();
     const no_kartu = document.getElementById('nomorKartu').value.trim();
     const budget_iklan = Number(document.getElementById('budgetIklan').value) || 0;
+    const payment_threshold = Number(document.getElementById('paymentThreshold').value) || 0;
     const daily_limit = Number(document.getElementById('dailyLimit').value);
 
     if (!produk_id || !nama_akun || !nama_kartu || !no_kartu || !daily_limit) {
@@ -246,7 +263,7 @@
     const btn = document.getElementById('saveBtn');
     btn.disabled = true; btn.textContent = 'Menyimpan...';
 
-    const payload = { produk_id, nama_akun, nama_kartu, no_kartu, budget_iklan, daily_limit };
+    const payload = { produk_id, nama_akun, nama_kartu, no_kartu, budget_iklan, payment_threshold, daily_limit };
 
     let error;
     if (id) {
