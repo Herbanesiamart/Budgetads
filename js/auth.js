@@ -14,8 +14,23 @@ async function getProfile() {
   if (!user) return null;
   const cached = sessionStorage.getItem('bma_profile');
   if (cached) return JSON.parse(cached);
+
   const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-  if (data) sessionStorage.setItem('bma_profile', JSON.stringify(data));
+
+  // Profile belum ada (misal daftar via Supabase dashboard) — auto-create
+  if (!data) {
+    const fallback = {
+      id: user.id,
+      nama: user.email.split('@')[0],
+      role: 'advertiser',
+      no_wa: null
+    };
+    await supabase.from('profiles').insert(fallback);
+    sessionStorage.setItem('bma_profile', JSON.stringify(fallback));
+    return fallback;
+  }
+
+  sessionStorage.setItem('bma_profile', JSON.stringify(data));
   return data;
 }
 
