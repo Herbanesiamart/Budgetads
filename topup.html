@@ -127,8 +127,7 @@
   }
 
   async function loadAkun() {
-    const { data } = await supabase
-      .from('akun_ads')
+    const { data } = await _db.from('akun_ads')
       .select('*, produk(nama, target_biaya_per_hasil)')
       .eq('advertiser_id', profile.id)
       .eq('aktif', true)
@@ -160,8 +159,7 @@
 
     // Cek penggunaan hari ini
     const today = new Date().toISOString().split('T')[0];
-    const { data: requests } = await supabase
-      .from('topup_requests')
+    const { data: requests } = await _db.from('topup_requests')
       .select('tipe, nominal_actual, status, nominal_request')
       .eq('akun_id', selectedAkun.id)
       .eq('tanggal', today);
@@ -378,8 +376,7 @@
 
   async function loadTodayRequests() {
     const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('topup_requests')
+    const { data } = await _db.from('topup_requests')
       .select('*, akun_ads(nama_akun, produk(nama))')
       .eq('advertiser_id', profile.id)
       .eq('tanggal', today)

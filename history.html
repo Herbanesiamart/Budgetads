@@ -120,8 +120,7 @@
     const status = document.getElementById('filterStatus').value;
     const isAdmin = profile.role === 'admin';
 
-    let query = supabase
-      .from('topup_requests')
+    let query = _db.from('topup_requests')
       .select('*, akun_ads(nama_akun, produk(nama)), profiles(nama)')
       .order('created_at', { ascending: false });
 

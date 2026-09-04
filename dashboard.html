@@ -114,8 +114,7 @@
 
   async function loadAdminDashboard(today) {
     // Stat: total top up hari ini (approved)
-    const { data: approved } = await supabase
-      .from('topup_requests')
+    const { data: approved } = await _db.from('topup_requests')
       .select('nominal_actual, akun_ads(daily_limit)')
       .eq('tanggal', today)
       .eq('status', 'approved');
@@ -123,14 +122,12 @@
     const totalTopup = (approved || []).reduce((s, r) => s + (r.nominal_actual || 0), 0);
 
     // Stat: pending
-    const { count: pendingCount } = await supabase
-      .from('topup_requests')
+    const { count: pendingCount } = await _db.from('topup_requests')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'pending');
 
     // Stat: akun aktif
-    const { count: akunCount } = await supabase
-      .from('akun_ads')
+    const { count: akunCount } = await _db.from('akun_ads')
       .select('id', { count: 'exact', head: true })
       .eq('aktif', true);
 
@@ -140,8 +137,7 @@
     document.getElementById('statSisa').textContent = '—';
 
     // Table: semua request hari ini
-    const { data: requests } = await supabase
-      .from('topup_requests')
+    const { data: requests } = await _db.from('topup_requests')
       .select('*, akun_ads(nama_akun, daily_limit, produk(nama)), profiles(nama)')
       .eq('tanggal', today)
       .order('created_at', { ascending: false });
@@ -182,14 +178,12 @@
   }
 
   async function loadAdvertiserDashboard(today) {
-    const { data: akuns } = await supabase
-      .from('akun_ads')
+    const { data: akuns } = await _db.from('akun_ads')
       .select('*, produk(nama)')
       .eq('advertiser_id', profile.id)
       .eq('aktif', true);
 
-    const { data: requests } = await supabase
-      .from('topup_requests')
+    const { data: requests } = await _db.from('topup_requests')
       .select('akun_id, nominal_actual, status')
       .eq('advertiser_id', profile.id)
       .eq('tanggal', today)
@@ -204,8 +198,7 @@
     const totalLimit = (akuns || []).reduce((s, a) => s + (a.daily_limit || 0), 0);
     const totalSisa = totalLimit - totalTopup;
 
-    const { count: pending } = await supabase
-      .from('topup_requests')
+    const { count: pending } = await _db.from('topup_requests')
       .select('id', { count: 'exact', head: true })
       .eq('advertiser_id', profile.id)
       .eq('tanggal', today)

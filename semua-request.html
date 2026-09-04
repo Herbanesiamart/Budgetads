@@ -112,8 +112,7 @@
 
   async function loadRequests() {
     const today = new Date().toISOString().split('T')[0];
-    let query = supabase
-      .from('topup_requests')
+    let query = _db.from('topup_requests')
       .select('*, akun_ads(nama_akun, produk(nama, target_biaya_per_hasil)), profiles(nama, no_wa)')
       .order('created_at', { ascending: false });
 

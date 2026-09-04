@@ -123,8 +123,7 @@
   }
 
   async function loadAkun() {
-    const { data } = await supabase
-      .from('akun_ads')
+    const { data } = await _db.from('akun_ads')
       .select('*, produk(nama)')
       .eq('advertiser_id', profile.id)
       .order('created_at', { ascending: false });
@@ -145,8 +144,7 @@
     // Ambil rata-rata spend aktual 7 hari per akun
     const akunIds = data.map(a => a.id);
     const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const { data: history } = await supabase
-      .from('topup_requests')
+    const { data: history } = await _db.from('topup_requests')
       .select('akun_id, extracted_data, tanggal')
       .in('akun_id', akunIds)
       .gte('tanggal', sevenDaysAgo.toISOString().split('T')[0])

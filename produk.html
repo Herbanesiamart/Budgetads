@@ -105,8 +105,7 @@
     }
 
     // Hitung jumlah akun per produk
-    const { data: akunData } = await supabase
-      .from('akun_ads')
+    const { data: akunData } = await _db.from('akun_ads')
       .select('produk_id')
       .eq('aktif', true);
 
