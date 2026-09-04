@@ -91,6 +91,12 @@
   async function init() {
     await requireAuth();
     profile = await getProfile();
+    if (!profile) {
+      document.getElementById('tableTitle').textContent = '⚠️ Profil tidak ditemukan';
+      document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:#65676B;">
+        Profil kamu belum tersimpan. <a href="settings.html" style="color:#1877F2;">Lengkapi profil</a> atau logout lalu daftar ulang.</td></tr>`;
+      return;
+    }
     await initNav('dashboard');
     await loadDashboard();
   }
