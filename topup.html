@@ -268,7 +268,8 @@
           imageUrl: publicUrl,
           targetBiayaPerHasil: selectedAkun.produk?.target_biaya_per_hasil || 0,
           sisaLimit: window._sisaLimit,
-          tipe: selectedTipe
+          tipe: selectedTipe,
+          akunId: selectedAkun.id
         })
       });
 
@@ -277,6 +278,7 @@
 
       extractedData = result.extracted;
       rekomendasi = result.rekomendasi;
+      window._avgSpend = result.avgSpend || null;
 
       renderResult();
       document.getElementById('step3').style.display = 'block';
@@ -297,8 +299,9 @@
     document.getElementById('extractedResult').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
         <div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;">
-          <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Total Spend</div>
+          <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Spend (SS ini)</div>
           <div style="font-weight:700;font-size:16px;">${formatRp(extractedData.spend)}</div>
+          ${window._avgSpend ? `<div style="font-size:10px;color:#65676B;">Avg 7 hr: ${formatRp(Math.round(window._avgSpend))}</div>` : '<div style="font-size:10px;color:#f59e0b;">Belum ada history</div>'}
         </div>
         <div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;">
           <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Hasil</div>

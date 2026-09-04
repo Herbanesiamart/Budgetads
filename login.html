@@ -155,12 +155,14 @@
   const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
   // Cek sudah login
-  supabase.auth.getUser().then(({ data: { user } }) => {
-    if (user) window.location.href = 'dashboard.html';
-  });
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) window.location.href = 'dashboard.html';
+  }).catch(() => {});
 
   function switchTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', (i === 0) === (tab === 'login')));
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', tab === 'login' ? i === 0 : i === 1);
+    });
     document.getElementById('loginTab').classList.toggle('active', tab === 'login');
     document.getElementById('registerTab').classList.toggle('active', tab === 'register');
     document.getElementById('errorMsg').style.display = 'none';
@@ -180,12 +182,13 @@
     const btn = document.getElementById('loginBtn');
     btn.disabled = true; btn.textContent = 'Masuk...';
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+      if (error) throw error;
+      window.location.href = 'dashboard.html';
+    } catch (err) {
       showError('Email atau password salah.');
       btn.disabled = false; btn.textContent = 'Masuk';
-    } else {
-      window.location.href = 'dashboard.html';
     }
   }
 
@@ -195,28 +198,36 @@
     const wa = document.getElementById('regWa').value.trim();
     const pass = document.getElementById('regPass').value;
 
-    if (!nama || !email || !pass) return showError('Semua field wajib diisi.');
+    if (!nama || !email || !pass) return showError('Nama, email, dan password wajib diisi.');
     if (pass.length < 6) return showError('Password minimal 6 karakter.');
 
     const btn = document.getElementById('regBtn');
     btn.disabled = true; btn.textContent = 'Mendaftar...';
 
-    const { data, error } = await supabase.auth.signUp({ email, password: pass });
-    if (error) {
-      showError(error.message);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: pass,
+        options: { emailRedirectTo: window.location.origin + '/dashboard.html' }
+      });
+
+      if (error) throw error;
+
+      // data.user bisa null jika email confirmation aktif
+      const userId = data.user?.id || data.session?.user?.id;
+      if (!userId) {
+        showError('Cek email kamu untuk konfirmasi akun, lalu login.');
+        btn.disabled = false; btn.textContent = 'Daftar';
+        return;
+      }
+
+      await supabase.from('profiles').insert({ id: userId, nama, no_wa: wa, role: 'advertiser' });
+      window.location.href = 'dashboard.html';
+
+    } catch (err) {
+      showError(err.message || 'Gagal mendaftar, coba lagi.');
       btn.disabled = false; btn.textContent = 'Daftar';
-      return;
     }
-
-    // Buat profile
-    await supabase.from('profiles').insert({
-      id: data.user.id,
-      nama,
-      no_wa: wa,
-      role: 'advertiser'
-    });
-
-    window.location.href = 'dashboard.html';
   }
 
   // Enter key support

@@ -80,9 +80,15 @@
     </div>
 
     <div class="form-group">
-      <label>Daily Limit (Rp)</label>
+      <label>Budget Iklan Total (Rp)</label>
+      <input type="number" id="budgetIklan" placeholder="2000000">
+      <div class="form-hint">Total anggaran semua campaign aktif di akun ini (dari Meta Ads Manager)</div>
+    </div>
+
+    <div class="form-group">
+      <label>Daily Limit Top Up (Rp)</label>
       <input type="number" id="dailyLimit" placeholder="500000">
-      <div class="form-hint">Maksimal total top up per hari untuk akun ini</div>
+      <div class="form-hint">Maksimal total top up yang boleh diajukan per hari</div>
     </div>
 
     <div style="display:flex;gap:10px;margin-top:8px;">
@@ -136,27 +142,63 @@
       return;
     }
 
-    container.innerHTML = data.map(a => `
+    // Ambil rata-rata spend aktual 7 hari per akun
+    const akunIds = data.map(a => a.id);
+    const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const { data: history } = await supabase
+      .from('topup_requests')
+      .select('akun_id, extracted_data, tanggal')
+      .in('akun_id', akunIds)
+      .gte('tanggal', sevenDaysAgo.toISOString().split('T')[0])
+      .eq('tipe', 'pagi'); // pakai pagi saja karena itu SS full hari kemarin
+
+    // Hitung rata-rata spend per akun
+    const spendMap = {};
+    (history || []).forEach(r => {
+      const spend = r.extracted_data?.spend || 0;
+      if (!spend) return;
+      if (!spendMap[r.akun_id]) spendMap[r.akun_id] = [];
+      spendMap[r.akun_id].push(spend);
+    });
+
+    container.innerHTML = data.map(a => {
+      const spends = spendMap[a.id] || [];
+      const avgSpend = spends.length > 0 ? spends.reduce((s, v) => s + v, 0) / spends.length : null;
+      const budgetIklan = a.budget_iklan || 0;
+      const efisiensi = avgSpend && budgetIklan ? Math.round(avgSpend / budgetIklan * 100) : null;
+
+      let spendInfo = '';
+      if (avgSpend !== null) {
+        spendInfo = `
+          <div style="margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:8px;font-size:12px;">
+            📊 Rata-rata spend aktual (7 hari): <strong>${formatRp(Math.round(avgSpend))}</strong>
+            ${efisiensi !== null ? `&nbsp;|&nbsp; Utilisasi: <strong style="color:${efisiensi < 60 ? '#f59e0b' : '#22c55e'}">${efisiensi}% dari budget iklan</strong>` : ''}
+          </div>`;
+      }
+
+      return `
       <div class="card" style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
-          <div>
+          <div style="flex:1;">
             <div style="font-weight:700;font-size:16px;margin-bottom:4px;">${a.nama_akun}</div>
             <div style="color:#65676B;font-size:13px;margin-bottom:8px;">
               🏷️ ${a.produk?.nama || '—'} &nbsp;|&nbsp; 💳 ${a.nama_kartu} ****${a.no_kartu}
             </div>
-            <div style="font-size:13px;">
-              Daily Limit: <strong>${formatRp(a.daily_limit)}</strong>
+            <div style="font-size:13px;display:flex;gap:16px;flex-wrap:wrap;">
+              <span>Budget Iklan: <strong>${formatRp(budgetIklan)}</strong></span>
+              <span>Daily Limit Top Up: <strong>${formatRp(a.daily_limit)}</strong></span>
             </div>
+            ${spendInfo}
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
             <span style="width:10px;height:10px;border-radius:50%;background:${a.aktif ? '#22c55e' : '#ef4444'};display:inline-block;"></span>
             <span style="font-size:12px;color:#65676B;">${a.aktif ? 'Aktif' : 'Nonaktif'}</span>
             <button class="btn btn-outline btn-sm" onclick="openEditModal(${JSON.stringify(a).replace(/"/g, '&quot;')})">Edit</button>
             <button class="btn btn-outline btn-sm" onclick="toggleAktif('${a.id}', ${a.aktif})">${a.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>
           </div>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   function openAddModal() {
@@ -166,6 +208,7 @@
     document.getElementById('namaAkun').value = '';
     document.getElementById('namaKartu').value = '';
     document.getElementById('nomorKartu').value = '';
+    document.getElementById('budgetIklan').value = '';
     document.getElementById('dailyLimit').value = '';
     document.getElementById('akunModal').classList.add('show');
   }
@@ -177,6 +220,7 @@
     document.getElementById('namaAkun').value = a.nama_akun;
     document.getElementById('namaKartu').value = a.nama_kartu;
     document.getElementById('nomorKartu').value = a.no_kartu;
+    document.getElementById('budgetIklan').value = a.budget_iklan || '';
     document.getElementById('dailyLimit').value = a.daily_limit;
     document.getElementById('akunModal').classList.add('show');
   }
@@ -191,6 +235,7 @@
     const nama_akun = document.getElementById('namaAkun').value.trim();
     const nama_kartu = document.getElementById('namaKartu').value.trim();
     const no_kartu = document.getElementById('nomorKartu').value.trim();
+    const budget_iklan = Number(document.getElementById('budgetIklan').value) || 0;
     const daily_limit = Number(document.getElementById('dailyLimit').value);
 
     if (!produk_id || !nama_akun || !nama_kartu || !no_kartu || !daily_limit) {
@@ -203,7 +248,7 @@
     const btn = document.getElementById('saveBtn');
     btn.disabled = true; btn.textContent = 'Menyimpan...';
 
-    const payload = { produk_id, nama_akun, nama_kartu, no_kartu, daily_limit };
+    const payload = { produk_id, nama_akun, nama_kartu, no_kartu, budget_iklan, daily_limit };
 
     let error;
     if (id) {
