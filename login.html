@@ -169,13 +169,13 @@
   }
 
   // ── Init Supabase dengan validasi ──
-  let supabase = null;
+  let sbClient = null;
   try {
     if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
       showError('Konfigurasi Supabase belum diisi. Cek env vars di Vercel.');
     } else {
-      supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      sbClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+      sbClient.auth.getSession().then(({ data: { session } }) => {
         if (session) window.location.href = 'dashboard.html';
       }).catch(() => {});
     }
@@ -184,8 +184,8 @@
   }
 
   function getClient() {
-    if (!supabase) { showError('Koneksi belum siap. Cek konfigurasi Supabase.'); return null; }
-    return supabase;
+    if (!sbClient) { showError('Koneksi belum siap. Cek konfigurasi Supabase.'); return null; }
+    return sbClient;
   }
 
   // ── Login ──
