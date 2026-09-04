@@ -62,8 +62,7 @@ async function initNav(activePage) {
 }
 
 async function loadNotifications(userId) {
-  const { data } = await supabase
-    .from('notifications')
+  const { data } = await _db.from('notifications')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
