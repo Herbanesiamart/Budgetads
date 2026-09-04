@@ -96,14 +96,14 @@ async function loadNotifications(userId) {
 }
 
 async function markRead(id, link) {
-  await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+  await _sb.from('notifications').update({ is_read: true }).eq('id', id);
   if (link) window.location.href = link;
   else loadNotifications((await getProfile()).id);
 }
 
 async function markAllRead() {
   const profile = await getProfile();
-  await supabase.from('notifications').update({ is_read: true }).eq('user_id', profile.id);
+  await _sb.from('notifications').update({ is_read: true }).eq('user_id', profile.id);
   loadNotifications(profile.id);
 }
 

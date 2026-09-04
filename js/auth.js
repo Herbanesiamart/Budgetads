@@ -2,10 +2,10 @@
 // Auth Helper — Budget Management Ads
 // =============================================
 
-const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+const _sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
 async function getUser() {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await _sb.auth.getUser();
   return user;
 }
 
@@ -15,9 +15,9 @@ async function getProfile() {
   const cached = sessionStorage.getItem('bma_profile');
   if (cached) return JSON.parse(cached);
 
-  const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  const { data } = await _sb.from('profiles').select('*').eq('id', user.id).single();
 
-  // Profile belum ada (misal daftar via Supabase dashboard) — auto-create
+  // Profile belum ada — auto-create
   if (!data) {
     const fallback = {
       id: user.id,
@@ -25,7 +25,7 @@ async function getProfile() {
       role: 'advertiser',
       no_wa: null
     };
-    await supabase.from('profiles').insert(fallback);
+    await _sb.from('profiles').insert(fallback);
     sessionStorage.setItem('bma_profile', JSON.stringify(fallback));
     return fallback;
   }
@@ -51,7 +51,7 @@ async function requireAdmin() {
 
 async function logout() {
   sessionStorage.removeItem('bma_profile');
-  await supabase.auth.signOut();
+  await _sb.auth.signOut();
   window.location.href = 'login.html';
 }
 
