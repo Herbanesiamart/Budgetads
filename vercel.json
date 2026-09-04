@@ -1,0 +1,12 @@
+{
+  "buildCommand": "node build.js",
+  "outputDirectory": ".",
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/login.html" }
+  ]
+}

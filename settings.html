@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">⚙️ Settings</div>
+    <div style="position:relative;">
+      <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+        <span class="notif-badge" id="notifBadge"></span>
+      </button>
+      <div class="notif-dropdown" id="notifDropdown">
+        <div class="notif-header">Notifikasi
+          <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+        </div>
+        <div id="notifList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content" style="max-width:600px;">
+
+    <!-- Profil -->
+    <div class="card">
+      <div class="card-title">👤 Profil Saya</div>
+      <div class="form-group">
+        <label>Nama</label>
+        <input type="text" id="profNama">
+      </div>
+      <div class="form-group">
+        <label>No. WhatsApp</label>
+        <input type="tel" id="profWa" placeholder="628xxxxxxxxx">
+      </div>
+      <button class="btn btn-primary" onclick="saveProfil()">Simpan Profil</button>
+    </div>
+
+    <!-- Ganti Password -->
+    <div class="card">
+      <div class="card-title">🔒 Ganti Password</div>
+      <div class="form-group">
+        <label>Password Baru</label>
+        <input type="password" id="newPass" placeholder="Min. 6 karakter">
+      </div>
+      <div class="form-group">
+        <label>Konfirmasi Password</label>
+        <input type="password" id="confPass" placeholder="Ulangi password baru">
+      </div>
+      <button class="btn btn-primary" onclick="gantiPassword()">Ganti Password</button>
+    </div>
+
+    <!-- WA Targets (admin only) -->
+    <div class="card" id="waCard" style="display:none;">
+      <div class="card-title">📲 Notifikasi WhatsApp</div>
+      <p style="font-size:13px;color:#65676B;margin-bottom:16px;">
+        Nomor yang akan menerima notif WA setiap ada request top up masuk.
+      </p>
+      <div id="waTargetsList"></div>
+      <button class="btn btn-outline" style="margin-top:12px;" onclick="addWaTarget()">+ Tambah Nomor</button>
+      <button class="btn btn-primary" style="margin-top:12px;margin-left:8px;" onclick="saveWaTargets()">Simpan</button>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  let profile = null;
+  let waTargets = [];
+
+  async function init() {
+    await requireAuth();
+    profile = await getProfile();
+    await initNav('settings');
+
+    document.getElementById('profNama').value = profile.nama || '';
+    document.getElementById('profWa').value = profile.no_wa || '';
+
+    if (profile.role === 'admin') {
+      document.getElementById('waCard').style.display = 'block';
+      await loadWaTargets();
+    }
+  }
+
+  async function saveProfil() {
+    const nama = document.getElementById('profNama').value.trim();
+    const no_wa = document.getElementById('profWa').value.trim();
+    if (!nama) return showToast('Nama tidak boleh kosong', 'error');
+
+    const { error } = await supabase.from('profiles').update({ nama, no_wa }).eq('id', profile.id);
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+
+    sessionStorage.removeItem('bma_profile');
+    showToast('Profil berhasil disimpan', 'success');
+  }
+
+  async function gantiPassword() {
+    const pass = document.getElementById('newPass').value;
+    const conf = document.getElementById('confPass').value;
+    if (pass.length < 6) return showToast('Password minimal 6 karakter', 'error');
+    if (pass !== conf) return showToast('Konfirmasi password tidak cocok', 'error');
+
+    const { error } = await supabase.auth.updateUser({ password: pass });
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+
+    document.getElementById('newPass').value = '';
+    document.getElementById('confPass').value = '';
+    showToast('Password berhasil diganti', 'success');
+  }
+
+  async function loadWaTargets() {
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'wa_targets').single();
+    waTargets = data?.value || [];
+    renderWaTargets();
+  }
+
+  function renderWaTargets() {
+    const wrap = document.getElementById('waTargetsList');
+    if (waTargets.length === 0) {
+      wrap.innerHTML = '<div style="color:#65676B;font-size:13px;margin-bottom:8px;">Belum ada nomor terdaftar.</div>';
+      return;
+    }
+    wrap.innerHTML = waTargets.map((t, i) => `
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+        <input type="text" value="${t.nama}" placeholder="Label (Finance, Admin...)" style="flex:1;" onchange="waTargets[${i}].nama = this.value">
+        <input type="tel" value="${t.no}" placeholder="628xxxxxxxxx" style="flex:1;" onchange="waTargets[${i}].no = this.value">
+        <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="removeWa(${i})">✕</button>
+      </div>
+    `).join('');
+  }
+
+  function addWaTarget() {
+    waTargets.push({ nama: '', no: '' });
+    renderWaTargets();
+  }
+
+  function removeWa(i) {
+    waTargets.splice(i, 1);
+    renderWaTargets();
+  }
+
+  async function saveWaTargets() {
+    const clean = waTargets.filter(t => t.nama && t.no);
+    const { error } = await supabase.from('app_settings').upsert({ key: 'wa_targets', value: clean });
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+    showToast('Nomor WA disimpan', 'success');
+  }
+
+  init();
+</script>
+</body>
+</html>

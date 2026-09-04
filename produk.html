@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Produk — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">🏷️ Kelola Produk</div>
+    <div style="position:relative;">
+      <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+        <span class="notif-badge" id="notifBadge"></span>
+      </button>
+      <div class="notif-dropdown" id="notifDropdown">
+        <div class="notif-header">Notifikasi
+          <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+        </div>
+        <div id="notifList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="color:#65676B;font-size:14px;">Kelola produk dan target KPI biaya per hasil</div>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Tambah Produk</button>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama Produk</th>
+              <th>Target Biaya/Hasil</th>
+              <th>Jumlah Akun Aktif</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="produkBody">
+            <tr><td colspan="4" style="text-align:center;padding:32px;color:#65676B;">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="produkModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Tambah Produk</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <input type="hidden" id="editId">
+
+    <div class="form-group">
+      <label>Nama Produk</label>
+      <input type="text" id="namaProduk" placeholder="Contoh: Herbanesia">
+    </div>
+
+    <div class="form-group">
+      <label>Target Biaya per Hasil (Rp)</label>
+      <input type="number" id="targetKPI" placeholder="50000">
+      <div class="form-hint">
+        AI akan rekomendasikan top up berdasarkan angka ini.<br>
+        Jika biaya per hasil ≤ target → performa bagus → tambah budget.<br>
+        Jika biaya per hasil > target 30% → performa jelek → stop/kurangi.
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeModal()">Batal</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="saveProduk()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  async function init() {
+    await requireAdmin();
+    await initNav('produk');
+    await loadProduk();
+  }
+
+  async function loadProduk() {
+    const { data } = await supabase.from('produk').select('*').order('nama');
+    const tbody = document.getElementById('produkBody');
+
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">🏷️</div><p>Belum ada produk.</p></div></td></tr>`;
+      return;
+    }
+
+    // Hitung jumlah akun per produk
+    const { data: akunData } = await supabase
+      .from('akun_ads')
+      .select('produk_id')
+      .eq('aktif', true);
+
+    const akunMap = {};
+    (akunData || []).forEach(a => { akunMap[a.produk_id] = (akunMap[a.produk_id] || 0) + 1; });
+
+    tbody.innerHTML = data.map(p => `
+      <tr>
+        <td><strong>${p.nama}</strong></td>
+        <td>${formatRp(p.target_biaya_per_hasil)}</td>
+        <td>${akunMap[p.id] || 0} akun</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick='openEditModal(${JSON.stringify(p)})'>Edit</button>
+          <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="deleteProduk('${p.id}', '${p.nama}')">Hapus</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function openAddModal() {
+    document.getElementById('editId').value = '';
+    document.getElementById('modalTitle').textContent = 'Tambah Produk';
+    document.getElementById('namaProduk').value = '';
+    document.getElementById('targetKPI').value = '';
+    document.getElementById('produkModal').classList.add('show');
+  }
+
+  function openEditModal(p) {
+    document.getElementById('editId').value = p.id;
+    document.getElementById('modalTitle').textContent = 'Edit Produk';
+    document.getElementById('namaProduk').value = p.nama;
+    document.getElementById('targetKPI').value = p.target_biaya_per_hasil;
+    document.getElementById('produkModal').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('produkModal').classList.remove('show');
+  }
+
+  async function saveProduk() {
+    const id = document.getElementById('editId').value;
+    const nama = document.getElementById('namaProduk').value.trim();
+    const target = Number(document.getElementById('targetKPI').value);
+
+    if (!nama || !target) return showToast('Isi semua field', 'error');
+
+    const payload = { nama, target_biaya_per_hasil: target };
+    let error;
+    if (id) {
+      ({ error } = await supabase.from('produk').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabase.from('produk').insert(payload));
+    }
+
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+    showToast(id ? 'Produk diperbarui' : 'Produk ditambahkan', 'success');
+    closeModal();
+    loadProduk();
+  }
+
+  async function deleteProduk(id, nama) {
+    if (!confirm(`Hapus produk "${nama}"? Semua akun ads yang pakai produk ini akan terpengaruh.`)) return;
+    const { error } = await supabase.from('produk').delete().eq('id', id);
+    if (error) return showToast('Gagal hapus: ' + error.message, 'error');
+    showToast('Produk dihapus', 'success');
+    loadProduk();
+  }
+
+  init();
+</script>
+</body>
+</html>

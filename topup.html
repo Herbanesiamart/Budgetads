@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Request Top Up — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">💸 Request Top Up</div>
+    <div style="position:relative;">
+      <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+        <span class="notif-badge" id="notifBadge"></span>
+      </button>
+      <div class="notif-dropdown" id="notifDropdown">
+        <div class="notif-header">Notifikasi
+          <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+        </div>
+        <div id="notifList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content" style="max-width:640px;">
+
+    <!-- Step 1: Pilih Akun -->
+    <div class="card" id="step1">
+      <div class="card-title">① Pilih Akun & Waktu Pengajuan</div>
+
+      <div class="form-group">
+        <label>Akun Ads</label>
+        <select id="akunSelect" onchange="onAkunChange()">
+          <option value="">Pilih akun...</option>
+        </select>
+      </div>
+
+      <div id="akunInfo" style="display:none;background:#f0f5ff;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;"></div>
+
+      <div class="form-group">
+        <label>Waktu Pengajuan</label>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-outline" id="btnPagi" onclick="setTipe('pagi')" style="flex:1;">🌅 Pagi</button>
+          <button class="btn btn-outline" id="btnSore" onclick="setTipe('sore')" style="flex:1;">🌇 Sore (Tambahan)</button>
+        </div>
+        <div class="form-hint" id="tipeHint" style="margin-top:8px;"></div>
+      </div>
+
+      <div id="limitWarning" style="display:none;"></div>
+    </div>
+
+    <!-- Step 2: Upload Screenshot -->
+    <div class="card" id="step2" style="display:none;">
+      <div class="card-title">② Upload Screenshot Meta Ads Manager</div>
+      <p style="font-size:13px;color:#65676B;margin-bottom:16px;">
+        Screenshot harus menampilkan kolom: <strong>Jumlah yang dibelanjakan</strong>, <strong>Hasil</strong>, dan <strong>Biaya per hasil</strong>.
+      </p>
+
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('ssFile').click()" ondragover="onDrag(event)" ondrop="onDrop(event)">
+        <div class="upload-icon">📸</div>
+        <p><strong>Klik atau drag</strong> screenshot kesini</p>
+        <p style="margin-top:4px;">PNG, JPG — maks 5MB</p>
+      </div>
+      <input type="file" id="ssFile" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">
+
+      <div id="previewWrap" style="display:none;margin-top:16px;">
+        <img id="ssPreview" style="width:100%;border-radius:10px;border:1px solid #dde1e7;max-height:300px;object-fit:contain;">
+        <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="clearFile()">✕ Ganti Screenshot</button>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;margin-top:16px;" id="extractBtn" onclick="doExtract()" disabled>
+        🤖 Analisis Screenshot dengan AI
+      </button>
+    </div>
+
+    <!-- Step 3: Hasil AI + Rekomendasi -->
+    <div class="card" id="step3" style="display:none;">
+      <div class="card-title">③ Hasil Analisis AI</div>
+
+      <div id="extractedResult"></div>
+      <div id="rekomendasiBox"></div>
+
+      <div class="form-group" style="margin-top:20px;">
+        <label>Catatan (opsional)</label>
+        <textarea id="catatan" rows="2" placeholder="Tambah catatan untuk admin..."></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button class="btn btn-outline" style="flex:1;" onclick="resetForm()">← Ulangi</button>
+        <button class="btn btn-primary" style="flex:1;" id="submitBtn" onclick="submitRequest()">Kirim Request</button>
+      </div>
+    </div>
+
+    <!-- Sudah ada request hari ini -->
+    <div class="card" id="statusCard" style="display:none;">
+      <div class="card-title">📋 Request Hari Ini</div>
+      <div id="todayRequests"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  let profile = null;
+  let akunList = [];
+  let selectedAkun = null;
+  let selectedTipe = null;
+  let uploadedFile = null;
+  let extractedData = null;
+  let rekomendasi = null;
+  let ssUrl = null;
+
+  async function init() {
+    await requireAuth();
+    profile = await getProfile();
+    await initNav('topup');
+    await loadAkun();
+    await loadTodayRequests();
+  }
+
+  async function loadAkun() {
+    const { data } = await supabase
+      .from('akun_ads')
+      .select('*, produk(nama, target_biaya_per_hasil)')
+      .eq('advertiser_id', profile.id)
+      .eq('aktif', true)
+      .order('nama_akun');
+
+    akunList = data || [];
+    const sel = document.getElementById('akunSelect');
+    if (akunList.length === 0) {
+      sel.innerHTML = '<option value="">Belum ada akun — buat di halaman Akun Ads</option>';
+    } else {
+      sel.innerHTML = '<option value="">Pilih akun...</option>' +
+        akunList.map(a => `<option value="${a.id}">${a.nama_akun} — ${a.produk?.nama || ''}</option>`).join('');
+    }
+  }
+
+  async function onAkunChange() {
+    const id = document.getElementById('akunSelect').value;
+    selectedAkun = akunList.find(a => a.id === id) || null;
+    selectedTipe = null;
+    document.getElementById('btnPagi').className = 'btn btn-outline';
+    document.getElementById('btnSore').className = 'btn btn-outline';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'none';
+
+    if (!selectedAkun) {
+      document.getElementById('akunInfo').style.display = 'none';
+      return;
+    }
+
+    // Cek penggunaan hari ini
+    const today = new Date().toISOString().split('T')[0];
+    const { data: requests } = await supabase
+      .from('topup_requests')
+      .select('tipe, nominal_actual, status, nominal_request')
+      .eq('akun_id', selectedAkun.id)
+      .eq('tanggal', today);
+
+    const totalTopup = (requests || [])
+      .filter(r => r.status === 'approved')
+      .reduce((s, r) => s + (r.nominal_actual || 0), 0);
+
+    const sisaLimit = selectedAkun.daily_limit - totalTopup;
+    const hasPagi = (requests || []).some(r => r.tipe === 'pagi');
+    const hasSore = (requests || []).some(r => r.tipe === 'sore');
+
+    document.getElementById('akunInfo').style.display = 'block';
+    document.getElementById('akunInfo').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div><div style="color:#65676B;font-size:11px;">Daily Limit</div><strong>${formatRp(selectedAkun.daily_limit)}</strong></div>
+        <div><div style="color:#65676B;font-size:11px;">Sudah Dipakai</div><strong style="color:#ef4444;">${formatRp(totalTopup)}</strong></div>
+        <div><div style="color:#65676B;font-size:11px;">Sisa Limit</div><strong style="color:${sisaLimit > 0 ? '#22c55e' : '#ef4444'};">${formatRp(sisaLimit)}</strong></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#65676B;">
+        💳 ${selectedAkun.nama_kartu} ****${selectedAkun.no_kartu} &nbsp;|&nbsp; 🏷️ ${selectedAkun.produk?.nama}
+        &nbsp;|&nbsp; Target Biaya/Hasil: ${formatRp(selectedAkun.produk?.target_biaya_per_hasil)}
+      </div>
+    `;
+
+    // Warning limit habis
+    const warning = document.getElementById('limitWarning');
+    if (sisaLimit <= 0) {
+      warning.style.display = 'block';
+      warning.innerHTML = `<div style="background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;">
+        ⚠️ Daily limit sudah habis hari ini. Tidak bisa request top up lagi.</div>`;
+    } else {
+      warning.style.display = 'none';
+    }
+
+    // Update hint tipe
+    document.getElementById('tipeHint').innerHTML = `
+      Pengajuan Pagi: <strong>${hasPagi ? '✅ Sudah' : '⬜ Belum'}</strong> &nbsp;|&nbsp;
+      Pengajuan Sore: <strong>${hasSore ? '✅ Sudah' : '⬜ Belum'}</strong>
+    `;
+
+    window._sisaLimit = sisaLimit;
+    window._hasPagi = hasPagi;
+    window._hasSore = hasSore;
+  }
+
+  function setTipe(tipe) {
+    if (!selectedAkun) return showToast('Pilih akun dulu', 'error');
+    if (window._sisaLimit <= 0) return showToast('Daily limit sudah habis', 'error');
+
+    selectedTipe = tipe;
+    document.getElementById('btnPagi').className = tipe === 'pagi' ? 'btn btn-primary' : 'btn btn-outline';
+    document.getElementById('btnSore').className = tipe === 'sore' ? 'btn btn-primary' : 'btn btn-outline';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('step3').style.display = 'none';
+    document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function onDrag(e) { e.preventDefault(); document.getElementById('uploadArea').classList.add('dragover'); }
+  function onDrop(e) { e.preventDefault(); document.getElementById('uploadArea').classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); }
+
+  function handleFile(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return showToast('File terlalu besar (maks 5MB)', 'error');
+    uploadedFile = file;
+    const url = URL.createObjectURL(file);
+    document.getElementById('ssPreview').src = url;
+    document.getElementById('previewWrap').style.display = 'block';
+    document.getElementById('uploadArea').style.display = 'none';
+    document.getElementById('extractBtn').disabled = false;
+  }
+
+  function clearFile() {
+    uploadedFile = null;
+    document.getElementById('ssFile').value = '';
+    document.getElementById('previewWrap').style.display = 'none';
+    document.getElementById('uploadArea').style.display = 'block';
+    document.getElementById('extractBtn').disabled = true;
+  }
+
+  async function doExtract() {
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = true; btn.textContent = '🤖 Menganalisis...';
+
+    try {
+      // Upload file ke Supabase Storage
+      const ext = uploadedFile.name.split('.').pop();
+      const path = `topup/${profile.id}/${Date.now()}.${ext}`;
+      const { data: storageData, error: storageErr } = await supabase.storage
+        .from('topup-screenshots')
+        .upload(path, uploadedFile);
+
+      if (storageErr) throw new Error('Gagal upload: ' + storageErr.message);
+
+      const { data: { publicUrl } } = supabase.storage.from('topup-screenshots').getPublicUrl(path);
+      ssUrl = publicUrl;
+
+      // Kirim ke API untuk extract
+      const res = await fetch('/api/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'extract',
+          imageUrl: publicUrl,
+          targetBiayaPerHasil: selectedAkun.produk?.target_biaya_per_hasil || 0,
+          sisaLimit: window._sisaLimit,
+          tipe: selectedTipe
+        })
+      });
+
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Extract gagal');
+
+      extractedData = result.extracted;
+      rekomendasi = result.rekomendasi;
+
+      renderResult();
+      document.getElementById('step3').style.display = 'block';
+      document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+
+    btn.disabled = false; btn.textContent = '🤖 Analisis Screenshot dengan AI';
+  }
+
+  function renderResult() {
+    const kpiStatus = extractedData.biaya_per_hasil <= selectedAkun.produk?.target_biaya_per_hasil
+      ? 'good' : extractedData.biaya_per_hasil <= selectedAkun.produk?.target_biaya_per_hasil * 1.3
+      ? 'warn' : 'bad';
+
+    document.getElementById('extractedResult').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Total Spend</div>
+          <div style="font-weight:700;font-size:16px;">${formatRp(extractedData.spend)}</div>
+        </div>
+        <div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Hasil</div>
+          <div style="font-weight:700;font-size:16px;">${extractedData.hasil}</div>
+        </div>
+        <div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:11px;color:#65676B;margin-bottom:4px;">Biaya/Hasil</div>
+          <div style="font-weight:700;font-size:16px;" class="kpi-${kpiStatus}">${formatRp(extractedData.biaya_per_hasil)}</div>
+          <div style="font-size:10px;color:#65676B;">Target: ${formatRp(selectedAkun.produk?.target_biaya_per_hasil)}</div>
+        </div>
+      </div>
+    `;
+
+    const klasMap = { approve: 'good', reduce: 'warn', stop: 'bad' };
+    const ikonMap = { approve: '✅', reduce: '⚠️', stop: '🛑' };
+    const kls = klasMap[rekomendasi.keputusan] || 'warn';
+
+    document.getElementById('rekomendasiBox').innerHTML = `
+      <div class="reko-box ${kls}">
+        <div class="reko-title">${ikonMap[rekomendasi.keputusan]} ${rekomendasi.label}</div>
+        <div class="reko-sub">${rekomendasi.alasan}</div>
+        ${rekomendasi.nominal ? `<div style="margin-top:10px;font-size:15px;font-weight:700;">Rekomendasi Top Up: ${formatRp(rekomendasi.nominal)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  async function submitRequest() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true; btn.textContent = 'Mengirim...';
+
+    const catatan = document.getElementById('catatan').value.trim();
+
+    const payload = {
+      advertiser_id: profile.id,
+      akun_id: selectedAkun.id,
+      tipe: selectedTipe,
+      ss_url: ssUrl,
+      extracted_data: extractedData,
+      rekomendasi: rekomendasi,
+      nominal_request: rekomendasi.nominal || 0,
+      status: 'pending',
+      catatan,
+      tanggal: new Date().toISOString().split('T')[0]
+    };
+
+    const { data, error } = await supabase.from('topup_requests').insert(payload).select().single();
+    if (error) {
+      showToast('Gagal kirim: ' + error.message, 'error');
+      btn.disabled = false; btn.textContent = 'Kirim Request';
+      return;
+    }
+
+    // Notif WA ke admin
+    await fetch('/api/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'notify',
+        requestId: data.id,
+        approveToken: data.approve_token,
+        advertiserNama: profile.nama,
+        akunNama: selectedAkun.nama_akun,
+        produkNama: selectedAkun.produk?.nama,
+        tipe: selectedTipe,
+        extracted: extractedData,
+        rekomendasi: rekomendasi
+      })
+    });
+
+    showToast('Request berhasil dikirim! Menunggu approval admin.', 'success');
+    resetForm();
+    loadTodayRequests();
+  }
+
+  async function loadTodayRequests() {
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('topup_requests')
+      .select('*, akun_ads(nama_akun, produk(nama))')
+      .eq('advertiser_id', profile.id)
+      .eq('tanggal', today)
+      .order('created_at', { ascending: false });
+
+    const card = document.getElementById('statusCard');
+    const wrap = document.getElementById('todayRequests');
+
+    if (!data || data.length === 0) { card.style.display = 'none'; return; }
+
+    card.style.display = 'block';
+    wrap.innerHTML = data.map(r => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #dde1e7;">
+        <div>
+          <div style="font-weight:600;">${r.akun_ads?.nama_akun} <span class="badge badge-${r.tipe}">${r.tipe}</span></div>
+          <div style="font-size:12px;color:#65676B;margin-top:2px;">
+            Req: ${formatRp(r.nominal_request)}
+            ${r.nominal_actual ? '→ Actual: ' + formatRp(r.nominal_actual) : ''}
+            &nbsp;|&nbsp; ${formatDateTime(r.created_at)}
+          </div>
+          ${r.catatan ? `<div style="font-size:12px;color:#65676B;margin-top:2px;">📝 ${r.catatan}</div>` : ''}
+        </div>
+        <span class="badge badge-${r.status}">${r.status === 'pending' ? 'Menunggu' : r.status === 'approved' ? 'ACC ✓' : 'Ditolak'}</span>
+      </div>
+    `).join('');
+  }
+
+  function resetForm() {
+    selectedTipe = null;
+    uploadedFile = null;
+    extractedData = null;
+    rekomendasi = null;
+    ssUrl = null;
+    document.getElementById('akunSelect').value = '';
+    document.getElementById('akunInfo').style.display = 'none';
+    document.getElementById('limitWarning').style.display = 'none';
+    document.getElementById('tipeHint').innerHTML = '';
+    document.getElementById('btnPagi').className = 'btn btn-outline';
+    document.getElementById('btnSore').className = 'btn btn-outline';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'none';
+    clearFile();
+    document.getElementById('catatan').value = '';
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').textContent = 'Kirim Request';
+    selectedAkun = null;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  init();
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semua Request — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">📥 Semua Request</div>
+    <div style="position:relative;">
+      <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+        <span class="notif-badge" id="notifBadge"></span>
+      </button>
+      <div class="notif-dropdown" id="notifDropdown">
+        <div class="notif-header">Notifikasi
+          <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+        </div>
+        <div id="notifList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Filter pending -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <button class="btn btn-primary" id="btnPending" onclick="setFilter('pending')">⏳ Pending</button>
+      <button class="btn btn-outline" id="btnAll" onclick="setFilter('all')">Semua Hari Ini</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title" id="cardTitle">⏳ Request Pending</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Advertiser</th>
+              <th>Akun / Produk</th>
+              <th>Waktu</th>
+              <th>Spend</th>
+              <th>Biaya/Hasil</th>
+              <th>Rekomendasi</th>
+              <th>Waktu Submit</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="reqBody">
+            <tr><td colspan="8" style="text-align:center;padding:32px;color:#65676B;">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Approve -->
+<div class="modal-overlay" id="approveModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Review Request</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div id="approveDetail" style="margin-bottom:16px;"></div>
+
+    <div class="form-group" id="nominalWrap">
+      <label>Nominal Actual yang Di-Top Up (Rp)</label>
+      <input type="number" id="nominalActual" placeholder="Contoh: 300000">
+      <div class="form-hint">Isi sesuai nominal yang sudah di-top up ke Meta Ads</div>
+    </div>
+
+    <div class="form-group">
+      <label>Catatan (wajib diisi jika tolak)</label>
+      <textarea id="approveNote" rows="2" placeholder="Catatan ke advertiser..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-danger" style="flex:1;" onclick="doAction('rejected')">✕ Tolak</button>
+      <button class="btn btn-success" style="flex:1;" onclick="doAction('approved')">✅ ACC & Catat</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  let profile = null;
+  let selectedRequest = null;
+  let currentFilter = 'pending';
+
+  async function init() {
+    await requireAdmin();
+    profile = await getProfile();
+    await initNav('semua-request');
+    await loadRequests();
+  }
+
+  function setFilter(f) {
+    currentFilter = f;
+    document.getElementById('btnPending').className = f === 'pending' ? 'btn btn-primary' : 'btn btn-outline';
+    document.getElementById('btnAll').className = f === 'all' ? 'btn btn-primary' : 'btn btn-outline';
+    loadRequests();
+  }
+
+  async function loadRequests() {
+    const today = new Date().toISOString().split('T')[0];
+    let query = supabase
+      .from('topup_requests')
+      .select('*, akun_ads(nama_akun, produk(nama, target_biaya_per_hasil)), profiles(nama, no_wa)')
+      .order('created_at', { ascending: false });
+
+    if (currentFilter === 'pending') {
+      query = query.eq('status', 'pending');
+      document.getElementById('cardTitle').textContent = '⏳ Request Pending';
+    } else {
+      query = query.eq('tanggal', today);
+      document.getElementById('cardTitle').textContent = '📥 Semua Request Hari Ini';
+    }
+
+    const { data } = await query.limit(100);
+    const tbody = document.getElementById('reqBody');
+
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">✅</div><p>${currentFilter === 'pending' ? 'Tidak ada request pending' : 'Belum ada request hari ini'}</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const ext = r.extracted_data || {};
+      const rek = r.rekomendasi || {};
+      const target = r.akun_ads?.produk?.target_biaya_per_hasil;
+      const kpiOk = ext.biaya_per_hasil && target && ext.biaya_per_hasil <= target;
+      return `<tr>
+        <td><strong>${r.profiles?.nama || '—'}</strong></td>
+        <td>${r.akun_ads?.nama_akun || '—'}<br><span style="font-size:11px;color:#65676B;">${r.akun_ads?.produk?.nama || ''}</span></td>
+        <td><span class="badge badge-${r.tipe}">${r.tipe}</span></td>
+        <td>${formatRp(ext.spend)}</td>
+        <td class="${kpiOk ? 'kpi-good' : 'kpi-bad'}">${formatRp(ext.biaya_per_hasil)}</td>
+        <td>${formatRp(rek.nominal)}<br><span style="font-size:11px;">${rek.label || ''}</span></td>
+        <td style="font-size:12px;">${formatDateTime(r.created_at)}</td>
+        <td>
+          ${r.status === 'pending'
+            ? `<button class="btn btn-primary btn-sm" onclick='openModal(${JSON.stringify(r).replace(/"/g, "&quot;")})'>Review</button>`
+            : `<span class="badge badge-${r.status}">${r.status === 'approved' ? 'ACC ✓ ' + formatRp(r.nominal_actual) : 'Ditolak'}</span>`
+          }
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openModal(r) {
+    selectedRequest = r;
+    const ext = r.extracted_data || {};
+    const rek = r.rekomendasi || {};
+    const target = r.akun_ads?.produk?.target_biaya_per_hasil;
+
+    document.getElementById('approveDetail').innerHTML = `
+      <div style="background:#f9fafb;border-radius:10px;padding:14px;font-size:13px;">
+        <div style="font-weight:700;margin-bottom:8px;">${r.akun_ads?.nama_akun} <span class="badge badge-${r.tipe}">${r.tipe}</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <div><span style="color:#65676B;">Spend:</span> <strong>${formatRp(ext.spend)}</strong></div>
+          <div><span style="color:#65676B;">Hasil:</span> <strong>${ext.hasil || '—'}</strong></div>
+          <div><span style="color:#65676B;">Biaya/Hasil:</span> <strong style="color:${ext.biaya_per_hasil <= target ? '#22c55e' : '#ef4444'}">${formatRp(ext.biaya_per_hasil)}</strong></div>
+          <div><span style="color:#65676B;">Target:</span> <strong>${formatRp(target)}</strong></div>
+        </div>
+        ${r.catatan ? `<div style="color:#65676B;">📝 ${r.catatan}</div>` : ''}
+        ${r.ss_url ? `<a href="${r.ss_url}" target="_blank" style="color:#1877F2;font-size:12px;display:inline-block;margin-top:8px;">🔗 Lihat Screenshot</a>` : ''}
+      </div>
+      <div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:${rek.keputusan === 'approve' ? '#f0fdf4' : rek.keputusan === 'reduce' ? '#fffbeb' : '#fef2f2'}">
+        <strong>${rek.label || '—'}</strong><br>
+        <span style="font-size:12px;color:#65676B;">${rek.alasan || ''}</span>
+        ${rek.nominal ? `<div style="margin-top:6px;font-weight:700;">Rekomendasi: ${formatRp(rek.nominal)}</div>` : ''}
+      </div>
+    `;
+
+    document.getElementById('nominalActual').value = rek.nominal || '';
+    document.getElementById('approveNote').value = '';
+    document.getElementById('approveModal').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('approveModal').classList.remove('show');
+    selectedRequest = null;
+  }
+
+  async function doAction(status) {
+    const nominal = Number(document.getElementById('nominalActual').value);
+    const catatan = document.getElementById('approveNote').value.trim();
+
+    if (status === 'approved' && (!nominal || nominal <= 0)) return showToast('Isi nominal yang di-top up', 'error');
+    if (status === 'rejected' && !catatan) return showToast('Isi alasan penolakan', 'error');
+
+    const update = { status, catatan: catatan || null, updated_at: new Date().toISOString() };
+    if (status === 'approved') update.nominal_actual = nominal;
+
+    const { error } = await supabase.from('topup_requests').update(update).eq('id', selectedRequest.id);
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+
+    // In-app notification
+    await supabase.from('notifications').insert({
+      user_id: selectedRequest.advertiser_id,
+      type: status === 'approved' ? 'topup_approved' : 'topup_rejected',
+      title: status === 'approved' ? '✅ Top Up Disetujui' : '❌ Top Up Ditolak',
+      message: status === 'approved'
+        ? `${selectedRequest.akun_ads?.nama_akun} — ${formatRp(nominal)} (${selectedRequest.tipe})`
+        : `${selectedRequest.akun_ads?.nama_akun} (${selectedRequest.tipe}): ${catatan}`,
+      link: 'history.html'
+    });
+
+    // WA notification ke advertiser
+    await fetch('/api/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'notify-advertiser',
+        advertiserWa: selectedRequest.profiles?.no_wa,
+        status,
+        akunNama: selectedRequest.akun_ads?.nama_akun,
+        produkNama: selectedRequest.akun_ads?.produk?.nama,
+        tipe: selectedRequest.tipe,
+        nominalActual: nominal,
+        catatan
+      })
+    });
+
+    showToast(status === 'approved' ? 'Request berhasil di-ACC' : 'Request ditolak', status === 'approved' ? 'success' : 'warning');
+    closeModal();
+    loadRequests();
+  }
+
+  init();
+</script>
+</body>
+</html>

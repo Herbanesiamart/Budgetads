@@ -1,0 +1,9 @@
+{
+  "name": "budget-management-ads",
+  "version": "1.0.0",
+  "description": "Budget Management Meta Ads — Adsy",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Akun Ads Saya — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">📱 Akun Ads Saya</div>
+    <div style="display:flex;gap:12px;align-items:center;">
+      <div style="position:relative;">
+        <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+          <span class="notif-badge" id="notifBadge"></span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown">
+          <div class="notif-header">
+            Notifikasi
+            <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+          </div>
+          <div id="notifList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- Header aksi -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div>
+        <div style="font-size:15px;color:#65676B;">Kelola akun Meta Ads kamu</div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Tambah Akun</button>
+    </div>
+
+    <!-- List Akun -->
+    <div id="akunList">
+      <div class="card">
+        <div style="text-align:center;padding:32px;color:#65676B;">Memuat...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Tambah/Edit Akun -->
+<div class="modal-overlay" id="akunModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Tambah Akun Ads</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <input type="hidden" id="editId">
+
+    <div class="form-group">
+      <label>Produk</label>
+      <select id="produkSelect">
+        <option value="">Pilih produk...</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Nama Akun Ads</label>
+      <input type="text" id="namaAkun" placeholder="Contoh: Herbal Jaya 73">
+    </div>
+
+    <div class="form-group">
+      <label>Nama Kartu Kredit</label>
+      <input type="text" id="namaKartu" placeholder="Contoh: BCA Visa">
+    </div>
+
+    <div class="form-group">
+      <label>4 Digit Terakhir Kartu</label>
+      <input type="text" id="nomorKartu" placeholder="1234" maxlength="4">
+    </div>
+
+    <div class="form-group">
+      <label>Daily Limit (Rp)</label>
+      <input type="number" id="dailyLimit" placeholder="500000">
+      <div class="form-hint">Maksimal total top up per hari untuk akun ini</div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal()">Batal</button>
+      <button class="btn btn-primary" style="flex:1" id="saveBtn" onclick="saveAkun()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  let profile = null;
+  let produkList = [];
+
+  async function init() {
+    await requireAuth();
+    profile = await getProfile();
+    await initNav('akun');
+    await loadProduk();
+    await loadAkun();
+  }
+
+  async function loadProduk() {
+    const { data } = await supabase.from('produk').select('*').order('nama');
+    produkList = data || [];
+    const sel = document.getElementById('produkSelect');
+    sel.innerHTML = '<option value="">Pilih produk...</option>' +
+      produkList.map(p => `<option value="${p.id}">${p.nama}</option>`).join('');
+  }
+
+  async function loadAkun() {
+    const { data } = await supabase
+      .from('akun_ads')
+      .select('*, produk(nama)')
+      .eq('advertiser_id', profile.id)
+      .order('created_at', { ascending: false });
+
+    const container = document.getElementById('akunList');
+
+    if (!data || data.length === 0) {
+      container.innerHTML = `
+        <div class="card">
+          <div class="empty-state">
+            <div class="empty-icon">📱</div>
+            <p>Belum ada akun ads.<br>Tambah akun untuk mulai request top up.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = data.map(a => `
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-weight:700;font-size:16px;margin-bottom:4px;">${a.nama_akun}</div>
+            <div style="color:#65676B;font-size:13px;margin-bottom:8px;">
+              🏷️ ${a.produk?.nama || '—'} &nbsp;|&nbsp; 💳 ${a.nama_kartu} ****${a.no_kartu}
+            </div>
+            <div style="font-size:13px;">
+              Daily Limit: <strong>${formatRp(a.daily_limit)}</strong>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="width:10px;height:10px;border-radius:50%;background:${a.aktif ? '#22c55e' : '#ef4444'};display:inline-block;"></span>
+            <span style="font-size:12px;color:#65676B;">${a.aktif ? 'Aktif' : 'Nonaktif'}</span>
+            <button class="btn btn-outline btn-sm" onclick="openEditModal(${JSON.stringify(a).replace(/"/g, '&quot;')})">Edit</button>
+            <button class="btn btn-outline btn-sm" onclick="toggleAktif('${a.id}', ${a.aktif})">${a.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function openAddModal() {
+    document.getElementById('editId').value = '';
+    document.getElementById('modalTitle').textContent = 'Tambah Akun Ads';
+    document.getElementById('produkSelect').value = '';
+    document.getElementById('namaAkun').value = '';
+    document.getElementById('namaKartu').value = '';
+    document.getElementById('nomorKartu').value = '';
+    document.getElementById('dailyLimit').value = '';
+    document.getElementById('akunModal').classList.add('show');
+  }
+
+  function openEditModal(a) {
+    document.getElementById('editId').value = a.id;
+    document.getElementById('modalTitle').textContent = 'Edit Akun Ads';
+    document.getElementById('produkSelect').value = a.produk_id;
+    document.getElementById('namaAkun').value = a.nama_akun;
+    document.getElementById('namaKartu').value = a.nama_kartu;
+    document.getElementById('nomorKartu').value = a.no_kartu;
+    document.getElementById('dailyLimit').value = a.daily_limit;
+    document.getElementById('akunModal').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('akunModal').classList.remove('show');
+  }
+
+  async function saveAkun() {
+    const id = document.getElementById('editId').value;
+    const produk_id = document.getElementById('produkSelect').value;
+    const nama_akun = document.getElementById('namaAkun').value.trim();
+    const nama_kartu = document.getElementById('namaKartu').value.trim();
+    const no_kartu = document.getElementById('nomorKartu').value.trim();
+    const daily_limit = Number(document.getElementById('dailyLimit').value);
+
+    if (!produk_id || !nama_akun || !nama_kartu || !no_kartu || !daily_limit) {
+      return showToast('Semua field wajib diisi', 'error');
+    }
+    if (no_kartu.length !== 4 || isNaN(no_kartu)) {
+      return showToast('Nomor kartu harus 4 digit angka', 'error');
+    }
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+    const payload = { produk_id, nama_akun, nama_kartu, no_kartu, daily_limit };
+
+    let error;
+    if (id) {
+      ({ error } = await supabase.from('akun_ads').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabase.from('akun_ads').insert({ ...payload, advertiser_id: profile.id }));
+    }
+
+    btn.disabled = false; btn.textContent = 'Simpan';
+
+    if (error) return showToast('Gagal menyimpan: ' + error.message, 'error');
+
+    showToast(id ? 'Akun berhasil diperbarui' : 'Akun berhasil ditambahkan', 'success');
+    closeModal();
+    loadAkun();
+  }
+
+  async function toggleAktif(id, current) {
+    const { error } = await supabase.from('akun_ads').update({ aktif: !current }).eq('id', id);
+    if (error) return showToast('Gagal mengubah status', 'error');
+    showToast('Status akun diperbarui', 'success');
+    loadAkun();
+  }
+
+  init();
+</script>
+</body>
+</html>

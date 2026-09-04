@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Budget Ads</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">📊 Dashboard</div>
+    <div style="position:relative;">
+      <button class="notif-btn" id="notifBtn" onclick="toggleNotif()">🔔
+        <span class="notif-badge" id="notifBadge"></span>
+      </button>
+      <div class="notif-dropdown" id="notifDropdown">
+        <div class="notif-header">Notifikasi
+          <button onclick="markAllRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1877F2;">Tandai semua dibaca</button>
+        </div>
+        <div id="notifList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Stat Cards -->
+    <div class="stat-grid" id="statGrid">
+      <div class="stat-card"><div class="stat-label">Total Top Up Hari Ini</div><div class="stat-value" id="statTopup">—</div></div>
+      <div class="stat-card"><div class="stat-label">Request Pending</div><div class="stat-value" id="statPending">—</div></div>
+      <div class="stat-card"><div class="stat-label">Akun Aktif</div><div class="stat-value" id="statAkun">—</div></div>
+      <div class="stat-card"><div class="stat-label">Sisa Limit Gabungan</div><div class="stat-value" id="statSisa">—</div></div>
+    </div>
+
+    <!-- Request Pending (admin) / Status Hari Ini (advertiser) -->
+    <div class="card">
+      <div class="card-title" id="tableTitle">⏳ Memuat...</div>
+      <div class="table-wrap">
+        <table>
+          <thead id="tableHead"></thead>
+          <tbody id="tableBody">
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:#65676B;">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal Approve (admin) -->
+<div class="modal-overlay" id="approveModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✅ Konfirmasi Top Up</div>
+      <button class="modal-close" onclick="closeApproveModal()">✕</button>
+    </div>
+
+    <div id="approveDetail" style="margin-bottom:16px;"></div>
+
+    <div class="form-group">
+      <label>Nominal Actual yang Di-Top Up (Rp)</label>
+      <input type="number" id="nominalActual" placeholder="Contoh: 300000">
+      <div class="form-hint">Isi sesuai nominal yang sudah kamu top up ke Meta Ads</div>
+    </div>
+
+    <div class="form-group">
+      <label>Catatan (opsional)</label>
+      <textarea id="approveNote" rows="2" placeholder="Catatan ke advertiser..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-danger" style="flex:1;" onclick="doReject()">✕ Tolak</button>
+      <button class="btn btn-success" style="flex:1;" id="approveBtn" onclick="doApprove()">✅ ACC & Catat</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/nav.js"></script>
+<script>
+  let profile = null;
+  let selectedRequest = null;
+
+  async function init() {
+    await requireAuth();
+    profile = await getProfile();
+    await initNav('dashboard');
+    await loadDashboard();
+  }
+
+  async function loadDashboard() {
+    const today = new Date().toISOString().split('T')[0];
+    const isAdmin = profile.role === 'admin';
+
+    if (isAdmin) {
+      await loadAdminDashboard(today);
+    } else {
+      await loadAdvertiserDashboard(today);
+    }
+  }
+
+  async function loadAdminDashboard(today) {
+    // Stat: total top up hari ini (approved)
+    const { data: approved } = await supabase
+      .from('topup_requests')
+      .select('nominal_actual, akun_ads(daily_limit)')
+      .eq('tanggal', today)
+      .eq('status', 'approved');
+
+    const totalTopup = (approved || []).reduce((s, r) => s + (r.nominal_actual || 0), 0);
+
+    // Stat: pending
+    const { count: pendingCount } = await supabase
+      .from('topup_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+
+    // Stat: akun aktif
+    const { count: akunCount } = await supabase
+      .from('akun_ads')
+      .select('id', { count: 'exact', head: true })
+      .eq('aktif', true);
+
+    document.getElementById('statTopup').textContent = formatRp(totalTopup);
+    document.getElementById('statPending').textContent = pendingCount || 0;
+    document.getElementById('statAkun').textContent = akunCount || 0;
+    document.getElementById('statSisa').textContent = '—';
+
+    // Table: semua request hari ini
+    const { data: requests } = await supabase
+      .from('topup_requests')
+      .select('*, akun_ads(nama_akun, daily_limit, produk(nama)), profiles(nama)')
+      .eq('tanggal', today)
+      .order('created_at', { ascending: false });
+
+    document.getElementById('tableTitle').textContent = '📥 Request Top Up Hari Ini';
+    document.getElementById('tableHead').innerHTML = `
+      <tr>
+        <th>Advertiser</th><th>Akun / Produk</th><th>Waktu</th>
+        <th>Spend (SS)</th><th>Biaya/Hasil</th><th>Rekomendasi</th><th>Status</th>
+      </tr>`;
+
+    const tbody = document.getElementById('tableBody');
+    if (!requests || requests.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📭</div><p>Belum ada request hari ini</p></div></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = requests.map(r => {
+      const ext = r.extracted_data || {};
+      const rek = r.rekomendasi || {};
+      const kpiOk = ext.biaya_per_hasil && r.akun_ads?.produk?.target_biaya_per_hasil
+        && ext.biaya_per_hasil <= r.akun_ads.produk.target_biaya_per_hasil;
+      return `<tr>
+        <td><strong>${r.profiles?.nama || '—'}</strong></td>
+        <td>${r.akun_ads?.nama_akun || '—'}<br><span style="font-size:11px;color:#65676B;">${r.akun_ads?.produk?.nama || ''}</span></td>
+        <td><span class="badge badge-${r.tipe}">${r.tipe}</span></td>
+        <td>${formatRp(ext.spend)}</td>
+        <td class="${kpiOk ? 'kpi-good' : 'kpi-bad'}">${formatRp(ext.biaya_per_hasil)}</td>
+        <td>${formatRp(rek.nominal)}<br><span style="font-size:11px;color:#65676B;">${rek.label || ''}</span></td>
+        <td>
+          ${r.status === 'pending'
+            ? `<button class="btn btn-primary btn-sm" onclick="openApprove(${JSON.stringify(r).replace(/"/g,'&quot;')})">Review</button>`
+            : `<span class="badge badge-${r.status}">${r.status === 'approved' ? 'ACC ✓ ' + formatRp(r.nominal_actual) : 'Ditolak'}</span>`
+          }
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadAdvertiserDashboard(today) {
+    const { data: akuns } = await supabase
+      .from('akun_ads')
+      .select('*, produk(nama)')
+      .eq('advertiser_id', profile.id)
+      .eq('aktif', true);
+
+    const { data: requests } = await supabase
+      .from('topup_requests')
+      .select('akun_id, nominal_actual, status')
+      .eq('advertiser_id', profile.id)
+      .eq('tanggal', today)
+      .eq('status', 'approved');
+
+    const topupMap = {};
+    (requests || []).forEach(r => {
+      topupMap[r.akun_id] = (topupMap[r.akun_id] || 0) + (r.nominal_actual || 0);
+    });
+
+    const totalTopup = Object.values(topupMap).reduce((s, v) => s + v, 0);
+    const totalLimit = (akuns || []).reduce((s, a) => s + (a.daily_limit || 0), 0);
+    const totalSisa = totalLimit - totalTopup;
+
+    const { count: pending } = await supabase
+      .from('topup_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('advertiser_id', profile.id)
+      .eq('tanggal', today)
+      .eq('status', 'pending');
+
+    document.getElementById('statTopup').textContent = formatRp(totalTopup);
+    document.getElementById('statPending').textContent = pending || 0;
+    document.getElementById('statAkun').textContent = (akuns || []).length;
+    document.getElementById('statSisa').textContent = formatRp(totalSisa);
+
+    document.getElementById('tableTitle').textContent = '📱 Status Akun Hari Ini';
+    document.getElementById('tableHead').innerHTML = `
+      <tr><th>Akun Ads</th><th>Produk</th><th>Daily Limit</th><th>Dipakai</th><th>Sisa</th><th>Status</th></tr>`;
+
+    const tbody = document.getElementById('tableBody');
+    if (!akuns || akuns.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📱</div>
+        <p>Belum ada akun. <a href="akun.html" style="color:#1877F2;">Tambah akun</a></p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = akuns.map(a => {
+      const dipakai = topupMap[a.id] || 0;
+      const sisa = a.daily_limit - dipakai;
+      const pct = a.daily_limit > 0 ? Math.round(dipakai / a.daily_limit * 100) : 0;
+      return `<tr>
+        <td><strong>${a.nama_akun}</strong></td>
+        <td>${a.produk?.nama || '—'}</td>
+        <td>${formatRp(a.daily_limit)}</td>
+        <td>${formatRp(dipakai)}</td>
+        <td style="color:${sisa > 0 ? '#22c55e' : '#ef4444'};font-weight:700;">${formatRp(sisa)}</td>
+        <td>
+          <div style="background:#e5e7eb;border-radius:20px;height:8px;width:80px;overflow:hidden;">
+            <div style="background:${pct >= 90 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e'};height:100%;width:${Math.min(pct,100)}%;border-radius:20px;"></div>
+          </div>
+          <span style="font-size:11px;color:#65676B;">${pct}%</span>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openApprove(r) {
+    selectedRequest = r;
+    const ext = r.extracted_data || {};
+    const rek = r.rekomendasi || {};
+    document.getElementById('approveDetail').innerHTML = `
+      <div style="background:#f9fafb;border-radius:10px;padding:14px;font-size:13px;">
+        <div style="font-weight:700;margin-bottom:8px;">${r.akun_ads?.nama_akun} — <span class="badge badge-${r.tipe}">${r.tipe}</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="color:#65676B;">Spend:</span> <strong>${formatRp(ext.spend)}</strong></div>
+          <div><span style="color:#65676B;">Hasil:</span> <strong>${ext.hasil || '—'}</strong></div>
+          <div><span style="color:#65676B;">Biaya/Hasil:</span> <strong>${formatRp(ext.biaya_per_hasil)}</strong></div>
+          <div><span style="color:#65676B;">Rekomendasi:</span> <strong>${formatRp(rek.nominal)}</strong></div>
+        </div>
+        ${r.catatan ? `<div style="margin-top:8px;color:#65676B;">📝 ${r.catatan}</div>` : ''}
+        ${r.ss_url ? `<div style="margin-top:10px;"><a href="${r.ss_url}" target="_blank" style="color:#1877F2;font-size:12px;">🔗 Lihat Screenshot</a></div>` : ''}
+      </div>
+      <div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:${rek.keputusan === 'approve' ? '#f0fdf4' : rek.keputusan === 'reduce' ? '#fffbeb' : '#fef2f2'}">
+        <strong>${rek.label || '—'}</strong><br>
+        <span style="font-size:12px;color:#65676B;">${rek.alasan || ''}</span>
+      </div>
+    `;
+    document.getElementById('nominalActual').value = rek.nominal || '';
+    document.getElementById('approveNote').value = '';
+    document.getElementById('approveModal').classList.add('show');
+  }
+
+  function closeApproveModal() {
+    document.getElementById('approveModal').classList.remove('show');
+    selectedRequest = null;
+  }
+
+  async function doApprove() {
+    const nominal = Number(document.getElementById('nominalActual').value);
+    if (!nominal || nominal <= 0) return showToast('Isi nominal yang di-top up', 'error');
+
+    const btn = document.getElementById('approveBtn');
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+    const catatan = document.getElementById('approveNote').value.trim();
+
+    const { error } = await supabase.from('topup_requests').update({
+      status: 'approved',
+      nominal_actual: nominal,
+      catatan: catatan || null,
+      updated_at: new Date().toISOString()
+    }).eq('id', selectedRequest.id);
+
+    if (error) { showToast('Gagal: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'ACC & Catat'; return; }
+
+    // Notif in-app ke advertiser
+    await supabase.from('notifications').insert({
+      user_id: selectedRequest.advertiser_id,
+      type: 'topup_approved',
+      title: '✅ Top Up Disetujui',
+      message: `${selectedRequest.akun_ads?.nama_akun} — ${formatRp(nominal)} sudah di-top up (${selectedRequest.tipe})`,
+      link: 'history.html'
+    });
+
+    // Notif WA ke advertiser
+    await fetch('/api/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'notify-advertiser',
+        requestId: selectedRequest.id,
+        advertiserWa: selectedRequest.advertiser_wa,
+        status: 'approved',
+        akunNama: selectedRequest.akun_ads?.nama_akun,
+        tipe: selectedRequest.tipe,
+        nominalActual: nominal,
+        catatan
+      })
+    });
+
+    showToast('Request berhasil di-ACC dan dicatat', 'success');
+    closeApproveModal();
+    loadDashboard();
+    btn.disabled = false; btn.textContent = 'ACC & Catat';
+  }
+
+  async function doReject() {
+    const catatan = document.getElementById('approveNote').value.trim();
+    if (!catatan) return showToast('Isi alasan penolakan', 'error');
+
+    const { error } = await supabase.from('topup_requests').update({
+      status: 'rejected',
+      catatan,
+      updated_at: new Date().toISOString()
+    }).eq('id', selectedRequest.id);
+
+    if (error) return showToast('Gagal: ' + error.message, 'error');
+
+    await supabase.from('notifications').insert({
+      user_id: selectedRequest.advertiser_id,
+      type: 'topup_rejected',
+      title: '❌ Top Up Ditolak',
+      message: `${selectedRequest.akun_ads?.nama_akun} (${selectedRequest.tipe}): ${catatan}`,
+      link: 'history.html'
+    });
+
+    await fetch('/api/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'notify-advertiser',
+        requestId: selectedRequest.id,
+        status: 'rejected',
+        akunNama: selectedRequest.akun_ads?.nama_akun,
+        tipe: selectedRequest.tipe,
+        catatan
+      })
+    });
+
+    showToast('Request ditolak', 'warning');
+    closeApproveModal();
+    loadDashboard();
+  }
+
+  init();
+</script>
+</body>
+</html>
