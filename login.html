@@ -152,13 +152,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/config.js"></script>
 <script>
-  const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-
-  // Cek sudah login
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session) window.location.href = 'dashboard.html';
-  }).catch(() => {});
-
+  // ── Tab switching — tidak bergantung pada Supabase ──
   function switchTab(tab) {
     document.querySelectorAll('.tab-btn').forEach((b, i) => {
       b.classList.toggle('active', tab === 'login' ? i === 0 : i === 1);
@@ -174,16 +168,38 @@
     el.style.display = 'block';
   }
 
+  // ── Init Supabase dengan validasi ──
+  let supabase = null;
+  try {
+    if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
+      showError('Konfigurasi Supabase belum diisi. Cek env vars di Vercel.');
+    } else {
+      supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) window.location.href = 'dashboard.html';
+      }).catch(() => {});
+    }
+  } catch (e) {
+    showError('Gagal inisialisasi koneksi. Cek konfigurasi.');
+  }
+
+  function getClient() {
+    if (!supabase) { showError('Koneksi belum siap. Cek konfigurasi Supabase.'); return null; }
+    return supabase;
+  }
+
+  // ── Login ──
   async function doLogin() {
+    const db = getClient(); if (!db) return;
     const email = document.getElementById('loginEmail').value.trim();
-    const pass = document.getElementById('loginPass').value;
+    const pass  = document.getElementById('loginPass').value;
     if (!email || !pass) return showError('Isi email dan password.');
 
     const btn = document.getElementById('loginBtn');
     btn.disabled = true; btn.textContent = 'Masuk...';
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+      const { error } = await db.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
       window.location.href = 'dashboard.html';
     } catch (err) {
@@ -192,11 +208,13 @@
     }
   }
 
+  // ── Register ──
   async function doRegister() {
-    const nama = document.getElementById('regNama').value.trim();
+    const db = getClient(); if (!db) return;
+    const nama  = document.getElementById('regNama').value.trim();
     const email = document.getElementById('regEmail').value.trim();
-    const wa = document.getElementById('regWa').value.trim();
-    const pass = document.getElementById('regPass').value;
+    const wa    = document.getElementById('regWa').value.trim();
+    const pass  = document.getElementById('regPass').value;
 
     if (!nama || !email || !pass) return showError('Nama, email, dan password wajib diisi.');
     if (pass.length < 6) return showError('Password minimal 6 karakter.');
@@ -205,15 +223,9 @@
     btn.disabled = true; btn.textContent = 'Mendaftar...';
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password: pass,
-        options: { emailRedirectTo: window.location.origin + '/dashboard.html' }
-      });
-
+      const { data, error } = await db.auth.signUp({ email, password: pass });
       if (error) throw error;
 
-      // data.user bisa null jika email confirmation aktif
       const userId = data.user?.id || data.session?.user?.id;
       if (!userId) {
         showError('Cek email kamu untuk konfirmasi akun, lalu login.');
@@ -221,7 +233,7 @@
         return;
       }
 
-      await supabase.from('profiles').insert({ id: userId, nama, no_wa: wa, role: 'advertiser' });
+      await db.from('profiles').insert({ id: userId, nama, no_wa: wa, role: 'advertiser' });
       window.location.href = 'dashboard.html';
 
     } catch (err) {
@@ -230,7 +242,7 @@
     }
   }
 
-  // Enter key support
+  // ── Enter key ──
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     if (document.getElementById('loginTab').classList.contains('active')) doLogin();
