@@ -3,6 +3,7 @@
 // =============================================
 
 const _sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+window._db = _sb; // global client untuk semua halaman
 
 async function getUser() {
   const { data: { user } } = await _sb.auth.getUser();
